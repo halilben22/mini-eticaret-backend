@@ -35,7 +35,7 @@ func main() {
 
 	//Public Rotalar
 	r.GET("/products", controllers.FindProducts)
-
+	r.POST("/admin/promotion/:id", admin.Promotion)
 	r.GET("/products/:id", controllers.FindProductById)
 
 	r.POST("/register", controllers.Register)
@@ -84,7 +84,7 @@ func main() {
 		adminGroup.GET("/admin/orders", admin.GetAllOrders)          // Tüm siparişler
 		adminGroup.PUT("/admin/orders/:id", admin.UpdateOrderStatus) // Durum güncelleme
 
-		r.POST("/admin/promotion/:id", admin.ProductDiscount) //discount özelliği
+		//discount özelliği
 	}
 
 	r.Run(":8080")

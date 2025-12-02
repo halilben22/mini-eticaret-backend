@@ -1,11 +1,15 @@
 package admin
 
 import (
+	"errors"
 	"net/http"
 	"portProject_development/db" // Kendi modül ismin
+	"portProject_development/enums"
 	"portProject_development/models"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func GetDashboardStats(c *gin.Context) {
@@ -64,15 +68,71 @@ func UpdateOrderStatus(c *gin.Context) {
 
 }
 
-func ProductDiscount(c *gin.Context) {
+func Promotion(c *gin.Context) {
 	productId := c.Param("id")
-	//promosyon yüzdesi ver
-	var input struct {
-		DiscountRate float64 `json:"discount_rate" binding:"required"`
+	productIdInt, err := strconv.Atoi(productId)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Geçersiz ID"})
+		return
 	}
 
-	if err := c.ShouldBindJSON(&input); err != nil || input.DiscountRate <= 0 || input.DiscountRate > 100 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Lütfen indirim değerlerini kontrol ediniz..." + err.Error()})
+	var input struct {
+		PromotionType string  `json:"promotion_type" binding:"required"`
+		DiscountRate  float64 `json:"discount_rate"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Ürün kontrolü
+	var product models.Product
+	if err := db.DB.First(&product, productId).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Ürün bulunamadı"})
+		return
+	}
+
+	targetType := enums.PromotionType(input.PromotionType)
+	var promotion models.Promotion
+
+	// Bu ürün için ve bu tipte (Örn: Discount) zaten açık bir kampanya başlığı var mı?
+	errProm := db.DB.Where("product_id = ? AND promotion_type = ?", product.ID, targetType).First(&promotion).Error
+
+	if errProm == nil {
+
+	} else if errors.Is(errProm, gorm.ErrRecordNotFound) {
+		// DURUM 2: Kayıt yok, o zaman yeni oluşturuyoruz.
+		promotion = models.Promotion{
+			ProductID:     product.ID,
+			PromotionType: targetType,
+		}
+		if err := db.DB.Create(&promotion).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Promosyon başlığı oluşturulamadı"})
+			return
+		}
+	} else {
+		// DURUM 3: Veritabanı hatası
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errProm.Error()})
+		return
+	}
+
+	if targetType == enums.PromotionTypeDiscount {
+		DiscountPromotion(c, input.DiscountRate, productIdInt, promotion.ID)
+		return
+	}
+
+	if targetType == enums.PromotionTypeShip {
+		ShipPromotion(c) // Gerekirse buna da ID gönderin
+		return
+	}
+}
+
+func DiscountPromotion(c *gin.Context, discountRate float64, productId int, promotionId uint) {
+
+	//promosyon yüzdesi ver
+
+	if discountRate <= 0 || discountRate > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Lütfen indirim değerlerini kontrol ediniz..."})
 		return
 	}
 
@@ -82,24 +142,33 @@ func ProductDiscount(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
 
-	var promotions []models.Promotion
+	var discountPromos []models.Discount
 
-	if err := db.DB.Where("product_id = ?", productId).Find(&promotions).Error; err == nil {
-		if len(promotions) > 0 {
-			db.DB.Where("product_id = ?", productId).Delete(&models.Promotion{})
+	if err := db.DB.
+		Joins("JOIN promotions ON promotions.id = discounts.promotion_id").
+		Where("discounts.product_id = ? AND promotions.promotion_type = ?", productId, enums.PromotionTypeDiscount).
+		Find(&discountPromos).Error; err == nil {
+		if len(discountPromos) > 0 {
+			db.DB.Where("product_id = ?", productId).Delete(&models.Discount{})
+
 		}
 	}
 	//promosyonlu fiyatı hesapla
-	var discountPrice = product.Price - (((input.DiscountRate) / 100) * product.Price)
+	var discountPrice = product.Price - (((discountRate) / 100) * product.Price)
 
-	promotion := models.Promotion{
-		ProductID:     product.ID,
-		Discount:      input.DiscountRate,
+	discount := models.Discount{
+		ProductID:     product.ID, // ⚠ FK hatasını engellemek için zorunlu
+		PromotionID:   promotionId,
+		DiscountRate:  discountRate,
 		DiscountPrice: discountPrice,
 	}
-	//promosyon 100 geçmesin
-	//bir üründe sadece 1 promosyon olsun
 
-	db.DB.Save(&promotion)
+	if err := db.DB.Create(&discount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+}
+
+func ShipPromotion(c *gin.Context) {
 
 }

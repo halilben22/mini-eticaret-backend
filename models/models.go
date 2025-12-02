@@ -1,6 +1,7 @@
 package models
 
 import (
+	"portProject_development/enums"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -85,11 +86,29 @@ type TokenBlackList struct {
 }
 
 type Promotion struct {
+	ID            uint                `gorm:"primaryKey" json:"id"`
+	ProductID     uint                `json:"product_id"`
+	PromotionType enums.PromotionType `json:"promotion_type"`
+	Discount      Discount            `gorm:"foreignKey:PromotionID" json:"discount"`
+	//Discount      float64             `json:"discount"`
+	//DiscountPrice float64             `json:"discount_price"`
+}
+
+type Discount struct {
 	ID            uint    `gorm:"primaryKey" json:"id"`
+	PromotionID   uint    `json:"promotion_id"`
 	ProductID     uint    `json:"product_id"`
-	Product       Product `gorm:"foreignKey:ProductID" json:"-"`
-	Discount      float64 `json:"discount"`
+	DiscountRate  float64 `json:"discount_rate"`
 	DiscountPrice float64 `json:"discount_price"`
+}
+
+type ShipDiscount struct {
+	ID             uint    `gorm:"primaryKey" json:"id"`
+	ProductID      uint    `json:"product_id"`
+	PromotionID    uint    `json:"promotion_id"`
+	ShipPriceLimit float64 `json:"ship_price_limit"`
+	Discount       float64 `json:"discount"`
+	DiscountPrice  float64 `json:"discount_price"`
 }
 
 func (u *User) BeforeSave(tx *gorm.DB) error {
