@@ -3,6 +3,7 @@ package controllers
 import (
 	"net/http"
 	"portProject_development/db" // DB değişkeni nerede tanımlıysa orayı import et (models veya db paketi)
+	"portProject_development/helper"
 	"portProject_development/models"
 
 	"github.com/gin-gonic/gin"
@@ -189,6 +190,7 @@ func CreateOrderBeforePayment(c *gin.Context) {
 
 	var input struct {
 		ShippingAddress string `json:"shipping_address" binding:"required"`
+		PromoCode       string `json:"promo_code"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Adres gerekli"})
@@ -205,6 +207,8 @@ func CreateOrderBeforePayment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Sepetiniz boş!"})
 		return
 	}
+
+	calc := helper.CalculateOrderTotal(cart.Items, input.PromoCode, db.DB)
 
 	tx := database.Begin()
 
@@ -236,7 +240,13 @@ func CreateOrderBeforePayment(c *gin.Context) {
 		UserID:          userID,
 		ShippingAddress: input.ShippingAddress,
 		Status:          "waiting_payment",
-		TotalAmount:     0,
+
+		// YENİ ALANLAR
+		SubTotal:         calc.SubTotal,
+		ShippingFee:      calc.ShippingFee,
+		DiscountAmount:   calc.DiscountAmount,
+		TotalAmount:      calc.TotalAmount,
+		AppliedPromoCode: calc.PromoCode,
 	}
 	if err := tx.Create(&order).Error; err != nil {
 		tx.Rollback()
@@ -244,7 +254,7 @@ func CreateOrderBeforePayment(c *gin.Context) {
 		return
 	}
 
-	var totalAmount float64 = 0
+	//var totalAmount float64 = 0
 
 	for _, cartItem := range cart.Items {
 		// ... Stok Kontrolü ...
@@ -270,11 +280,11 @@ func CreateOrderBeforePayment(c *gin.Context) {
 		newStock := cartItem.Product.StockQuantity - cartItem.Quantity
 		tx.Model(&cartItem.Product).Update("stock_quantity", newStock)
 
-		totalAmount += cartItem.Product.Price * float64(cartItem.Quantity)
+		//totalAmount += cartItem.Product.Price * float64(cartItem.Quantity)
 	}
 
 	// ... Toplam Güncelleme ve Commit ...
-	if err := tx.Model(&order).Update("total_amount", totalAmount).Error; err != nil {
+	if err := tx.Model(&order).Update("total_amount", calc.TotalAmount).Error; err != nil {
 		tx.Rollback()
 		return
 	}
@@ -282,9 +292,10 @@ func CreateOrderBeforePayment(c *gin.Context) {
 	tx.Commit()
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":  "Sipariş oluşturuldu, ödeme bekleniyor.",
+		"message":  "Sipariş oluşturuldu",
 		"order_id": order.ID,
-		"total":    totalAmount,
+		"total":    order.TotalAmount,
+		"shipping": order.ShippingFee, // Frontend'e kargo ücretini de dönelim
 	})
 }
 

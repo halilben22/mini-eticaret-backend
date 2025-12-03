@@ -84,7 +84,12 @@ func main() {
 		adminGroup.GET("/admin/orders", admin.GetAllOrders)          // Tüm siparişler
 		adminGroup.PUT("/admin/orders/:id", admin.UpdateOrderStatus) // Durum güncelleme
 
-		//discount özelliği
+		// ... adminGroup içinde ...
+
+		// Promosyon Yönetimi
+		adminGroup.POST("/admin/promotions", admin.CreatePromotion)       // (Bunu daha önce eklemiştik)
+		adminGroup.GET("/admin/promotions", admin.GetPromotions)          // <--- YENİ
+		adminGroup.DELETE("/admin/promotions/:id", admin.DeletePromotion) // <--- YENİ
 	}
 
 	r.Run(":8080")
