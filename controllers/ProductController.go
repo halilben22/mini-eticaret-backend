@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"path/filepath"
 	"portProject_development/db"
@@ -70,50 +71,52 @@ func CreateProduct(c *gin.Context) {
 
 }
 
+// GET /products?page=1&limit=8&name=elma(mesela böyle bir istek)
 func FindProducts(c *gin.Context) {
-	// 1. Veritabanı bağlantısını al (Zincirleme sorgu için değişkene atıyoruz)
-	// models.DB yerine query değişkenini kullanacağız.
-	query := db.DB
+	query := db.DB.Model(&models.Product{}) // Model ile başla
 
-	//filtrele (isim ile arama)
+	// 1. FİLTRELERİ UYGULA (Arama, Kategori vb.)
 	if name := c.Query("name"); name != "" {
 		query = query.Where("name ILIKE ?", "%"+name+"%")
 	}
-
-	//filtrele(kategori ile)
-
 	if categoryID := c.Query("cat"); categoryID != "" {
 		query = query.Where("category_id = ?", categoryID)
 	}
 
-	// filtrele minimum fiyat (min=100)
-	if minPrice := c.Query("min"); minPrice != "" {
-		query = query.Where("price >= ?", minPrice)
-	}
+	//TOPLAM SAYIYI BUL (Pagination uygulamadan önce!!!)
+	var total int64
+	query.Count(&total) // Filtrelenmiş sonuçların toplam sayısı
 
-	// filtrele  maksimum Fiyat (max=5000)
-	if maxPrice := c.Query("max"); maxPrice != "" {
-		query = query.Where("price <= ?", maxPrice)
-	}
+	//  SAYFALAMA AYARLARI
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "8")) // Sayfada 8 ürün gösterelim
+	offset := (page - 1) * limit
 
+	//  VERİYİ ÇEK (Limit ve Offsetle beraber)
 	var products []models.Product
-
-	if err := query.Find(&products).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := query.Limit(limit).Offset(offset).Order("id desc").Find(&products).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ürünler getirilemedi"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"count": len(products), // Kaç ürün bulunduğunu gösterelim
-		"data":  products,
-	})
+	// TOPLAM SAYFA HESABI
+	totalPages := int(math.Ceil(float64(total) / float64(limit)))
 
+	c.JSON(http.StatusOK, gin.H{
+		"data": products,
+		"meta": gin.H{
+			"total_items": total,
+			"total_pages": totalPages,
+			"page":        page,
+			"limit":       limit,
+		},
+	})
 }
 
 func FindProductById(c *gin.Context) {
 	var product models.Product
 
-	// URL'den gelen ID'yi al (Örn: /products/1)
+	// URL'den gelen ID'yi al (Örnek=/products/1)
 	id := c.Param("id")
 
 	if err := db.DB.First(&product, id).Error; err != nil {
@@ -137,10 +140,10 @@ func GetTopRatedProducts(c *gin.Context) {
 	var results []Result
 
 	// SQL MANTIĞI:
-	// 1. AVG(rating) -> Puan Ortalaması
-	// 2. COUNT(id)   -> Yorum Sayısı
-	// 3. ORDER BY average_rating DESC, review_count DESC
-	//    (Önce puana bak, puanlar eşitse kimin çok yorumu varsa onu öne al)
+	//  AVG(rating) -> Puan Ortalaması
+	//  COUNT(id)   -> Yorum Sayısı
+	// ORDER BY average_rating DESC, review_count DESC
+	//   (Önce puana bak, puanlar eşitse kimin çok yorumu varsa onu öne al)
 
 	err := db.DB.Table("products").
 		Select("products.*, AVG(reviews.rating) as average_rating, COUNT(reviews.id) as review_count").
