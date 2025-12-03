@@ -36,10 +36,16 @@ type Order struct {
 	UserID          uint        `json:"user_id"`
 	User            User        `gorm:"foreignKey:UserID" json:"-"` // İlişki
 	Status          string      `gorm:"default:pending" json:"status"`
-	TotalAmount     float64     `json:"total_amount"`
 	ShippingAddress string      `json:"shipping_address"`
 	OrderItems      []OrderItem `json:"order_items"`
 	CreatedAt       time.Time   `json:"created_at"`
+
+	SubTotal       float64 `json:"sub_total"`
+	ShippingFee    float64 `json:"shipping_fee"`
+	DiscountAmount float64 `json:"discount_amount"`
+	TotalAmount    float64 `json:"total_amount"`
+
+	AppliedPromoCode string `json:"applied_promo_code"`
 }
 
 type OrderItem struct {
@@ -102,13 +108,21 @@ type Discount struct {
 	DiscountPrice float64 `json:"discount_price"`
 }
 
-type ShipDiscount struct {
-	ID             uint    `gorm:"primaryKey" json:"id"`
-	ProductID      uint    `json:"product_id"`
-	PromotionID    uint    `json:"promotion_id"`
-	ShipPriceLimit float64 `json:"ship_price_limit"`
-	Discount       float64 `json:"discount"`
-	DiscountPrice  float64 `json:"discount_price"`
+type ShipPromotion struct {
+	ID          uint   `gorm:"primaryKey" json:"id"`
+	Code        string `gorm:"uniqueIndex" json:"code"` // Örn: KARGO_BEDAVA, YAZ20
+	Description string `json:"description"`
+
+	DiscountType string `json:"discount_type"`
+
+	DiscountValue float64 `json:"discount_value"`
+
+	MinOrderAmount float64 `json:"min_order_amount"`
+
+	IsActive  bool      `json:"is_active" gorm:"default:true"`
+	ExpiresAt time.Time `json:"expires_at"`
+
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (u *User) BeforeSave(tx *gorm.DB) error {
