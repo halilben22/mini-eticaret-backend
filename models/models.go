@@ -1,7 +1,6 @@
 package models
 
 import (
-	"portProject_development/enums"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -92,23 +91,6 @@ type TokenBlackList struct {
 }
 
 type Promotion struct {
-	ID            uint                `gorm:"primaryKey" json:"id"`
-	ProductID     uint                `json:"product_id"`
-	PromotionType enums.PromotionType `json:"promotion_type"`
-	Discount      Discount            `gorm:"foreignKey:PromotionID" json:"discount"`
-	//Discount      float64             `json:"discount"`
-	//DiscountPrice float64             `json:"discount_price"`
-}
-
-type Discount struct {
-	ID            uint    `gorm:"primaryKey" json:"id"`
-	PromotionID   uint    `json:"promotion_id"`
-	ProductID     uint    `json:"product_id"`
-	DiscountRate  float64 `json:"discount_rate"`
-	DiscountPrice float64 `json:"discount_price"`
-}
-
-type ShipPromotion struct {
 	ID          uint   `gorm:"primaryKey" json:"id"`
 	Code        string `gorm:"uniqueIndex" json:"code"` // Örn: KARGO_BEDAVA, YAZ20
 	Description string `json:"description"`

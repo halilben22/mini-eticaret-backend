@@ -1,9 +1,12 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"portProject_development/db" // Kendi modül ismin
 	"portProject_development/models"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -65,49 +68,136 @@ func UpdateOrderStatus(c *gin.Context) {
 
 }
 
-// POST /admin/promotions
-func CreatePromotion(c *gin.Context) {
-	var input models.ShipPromotion
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+func CreateProduct(c *gin.Context) {
+
+	name := c.PostForm("name")
+	description := c.PostForm("description")
+	priceStr := c.PostForm("price")
+	stockStr := c.PostForm("stock_quantity")
+	categoryIDStr := c.PostForm("category_id")
+
+	price, _ := strconv.ParseFloat(priceStr, 64)
+	stock, _ := strconv.Atoi(stockStr)
+	categoryID, _ := strconv.Atoi(categoryIDStr)
+
+	//Dosya yükle
+	file, err := c.FormFile("image")
+	var imagePath string
+
+	if err == nil {
+		filename := fmt.Sprintf("%d_%s", time.Now().Unix(), filepath.Base(file.Filename))
+		uploadPath := "uploads/" + filename
+
+		//Dosyayı sunucuya kaydet
+		if err := c.SaveUploadedFile(file, uploadPath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Dosya kaydedilemedi: " + err.Error()})
+
+			return
+		}
+
+		// Veritabanına kaydedilecek yol (URL)
+		// Gerçek hayatta buraya tam domain de eklenebilir (http://localhost:8080/...)
+		imagePath = "/uploads/" + filename
+
+	} else {
+		// Dosya yüklenmediyse varsayılan bir resim koyabiliriz
+		imagePath = ""
+	}
+
+	product := models.Product{
+		Name:          name,
+		Description:   description,
+		Price:         price,
+		StockQuantity: stock,
+		CategoryID:    uint(categoryID),
+		ImageURL:      imagePath,
+		IsActive:      true,
+	}
+
+	if err := db.DB.Create(&product).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ürün veritabanına eklenemedi"})
 		return
 	}
 
-	// Varsayılan bitiş tarihi yoksa 1 yıl sonrasını ver
-	if input.ExpiresAt.IsZero() {
-		input.ExpiresAt = time.Now().AddDate(1, 0, 0)
-	}
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Ürün ve resim başarıyla yüklendi",
+		"data":    product,
+	})
 
-	if err := db.DB.Create(&input).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Promosyon oluşturulamadı"})
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{"data": input})
 }
 
-// 4. PROMOSYONLARI LİSTELE (GET /admin/promotions)
-func GetPromotions(c *gin.Context) {
-	var promotions []models.ShipPromotion
-
-	// En yeniden en eskiye doğru sırala
-	if err := db.DB.Order("created_at desc").Find(&promotions).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Promosyonlar getirilemedi"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"data": promotions})
-}
-
-// 5. PROMOSYON SİL (DELETE /admin/promotions/:id)
-func DeletePromotion(c *gin.Context) {
+// ÜRÜN GÜNCELLE (PUT /products/:id)
+func UpdateProduct(c *gin.Context) {
 	id := c.Param("id")
 
-	// Veritabanından sil (Hard delete yapar, istersen Soft Delete için gorm.DeletedAt kullanmış olman gerekirdi)
-	if err := db.DB.Delete(&models.Promotion{}, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Promosyon silinemedi"})
+	// ürünü getir
+	var product models.Product
+	if err := db.DB.First(&product, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Ürün bulunamadı"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Promosyon başarıyla silindi"})
+	// Form verilerini al
+	name := c.PostForm("name")
+	description := c.PostForm("description")
+	priceStr := c.PostForm("price")
+	stockStr := c.PostForm("stock_quantity")
+	categoryIDStr := c.PostForm("category_id")
+
+	// Eğer boş değilse güncelle
+	if name != "" {
+		product.Name = name
+	}
+	if description != "" {
+		product.Description = description
+	}
+
+	if priceStr != "" {
+		if p, err := strconv.ParseFloat(priceStr, 64); err == nil {
+			product.Price = p
+		}
+	}
+	if stockStr != "" {
+		if s, err := strconv.Atoi(stockStr); err == nil {
+			product.StockQuantity = s
+		}
+	}
+	if categoryIDStr != "" {
+		if cat, err := strconv.Atoi(categoryIDStr); err == nil {
+			product.CategoryID = uint(cat)
+		}
+	}
+
+	// Resim Güncelleme
+	file, err := c.FormFile("image")
+	if err == nil {
+		// Yeni resim geldiyse eskisini silmek (os.Remove) iyi olur ama şimdilik üzerine yazalım
+		filename := fmt.Sprintf("%d_%s", time.Now().Unix(), filepath.Base(file.Filename))
+		uploadPath := "uploads/" + filename
+
+		if err := c.SaveUploadedFile(file, uploadPath); err == nil {
+			product.ImageURL = "/uploads/" + filename
+		}
+	}
+
+	// Kaydet
+	if err := db.DB.Save(&product).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Güncelleme başarısız"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Ürün güncellendi", "data": product})
+}
+
+// SOFT DELETE İLE ÜRÜNÜ SİLME
+func DeleteProduct(c *gin.Context) {
+	id := c.Param("id")
+
+	//SİLİNMİŞ GİBİ GÖRÜNECEK VE GEÇMİŞTE BU ÜRÜNÜ ALANLARIN KAYITLARINI TUTABİLECEĞİZ...
+	if err := db.DB.Model(&models.Product{}).Where("id = ?", id).Update("is_active", false).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ürün arşivlenemedi"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Ürün başarıyla silindi (arşivlendi)"})
 }

@@ -1,75 +1,15 @@
 package controllers
 
 import (
-	"fmt"
 	"math"
 	"net/http"
-	"path/filepath"
+
 	"portProject_development/db"
 	"portProject_development/models"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
-
-func CreateProduct(c *gin.Context) {
-
-	name := c.PostForm("name")
-	description := c.PostForm("description")
-	priceStr := c.PostForm("price")
-	stockStr := c.PostForm("stock_quantity")
-	categoryIDStr := c.PostForm("category_id")
-
-	price, _ := strconv.ParseFloat(priceStr, 64)
-	stock, _ := strconv.Atoi(stockStr)
-	categoryID, _ := strconv.Atoi(categoryIDStr)
-
-	//Dosya yükle
-	file, err := c.FormFile("image")
-	var imagePath string
-
-	if err == nil {
-		filename := fmt.Sprintf("%d_%s", time.Now().Unix(), filepath.Base(file.Filename))
-		uploadPath := "uploads/" + filename
-
-		//Dosyayı sunucuya kaydet
-		if err := c.SaveUploadedFile(file, uploadPath); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Dosya kaydedilemedi: " + err.Error()})
-
-			return
-		}
-
-		// Veritabanına kaydedilecek yol (URL)
-		// Gerçek hayatta buraya tam domain de eklenebilir (http://localhost:8080/...)
-		imagePath = "/uploads/" + filename
-
-	} else {
-		// Dosya yüklenmediyse varsayılan bir resim koyabiliriz
-		imagePath = ""
-	}
-
-	product := models.Product{
-		Name:          name,
-		Description:   description,
-		Price:         price,
-		StockQuantity: stock,
-		CategoryID:    uint(categoryID),
-		ImageURL:      imagePath,
-		IsActive:      true,
-	}
-
-	if err := db.DB.Create(&product).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ürün veritabanına eklenemedi"})
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{
-		"message": "Ürün ve resim başarıyla yüklendi",
-		"data":    product,
-	})
-
-}
 
 // GET /products?page=1&limit=8&name=elma(mesela böyle bir istek)
 func FindProducts(c *gin.Context) {
@@ -94,7 +34,7 @@ func FindProducts(c *gin.Context) {
 
 	//  VERİYİ ÇEK (Limit ve Offsetle beraber)
 	var products []models.Product
-	if err := query.Limit(limit).Offset(offset).Order("id desc").Find(&products).Error; err != nil {
+	if err := query.Limit(limit).Offset(offset).Order("id desc").Where("is_active=true").Find(&products).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ürünler getirilemedi"})
 		return
 	}

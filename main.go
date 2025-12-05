@@ -13,9 +13,6 @@ import (
 	"github.com/gin-contrib/cors"
 )
 
-//TIP <p>To run your code, right-click the code and select <b>Run</b>.</p> <p>Alternatively, click
-// the <icon src="AllIcons.Actions.Execute"/> icon in the gutter and select the <b>Run</b> menu item from here.</p>
-
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -35,7 +32,7 @@ func main() {
 
 	//Public Rotalar
 	r.GET("/products", controllers.FindProducts)
-	r.POST("/admin/promotion/:id", admin.Promotion)
+
 	r.GET("/products/:id", controllers.FindProductById)
 
 	r.POST("/register", controllers.Register)
@@ -81,18 +78,20 @@ func main() {
 	adminGroup.Use(middlewares.RequireAdmin)
 	{
 
-		adminGroup.POST("/admin/add-product", controllers.CreateProduct)
+		adminGroup.POST("/admin/add-product", admin.CreateProduct)
+		adminGroup.PUT("/products/:id", admin.UpdateProduct)
+		adminGroup.DELETE("/products/:id", admin.DeleteProduct)
 
 		adminGroup.GET("/admin/stats", admin.GetDashboardStats)      // İstatistik
 		adminGroup.GET("/admin/orders", admin.GetAllOrders)          // Tüm siparişler
 		adminGroup.PUT("/admin/orders/:id", admin.UpdateOrderStatus) // Durum güncelleme
 
 		// Promosyon Yönetimi
-		adminGroup.POST("/admin/promotions", admin.CreatePromotion)       // (Bunu daha önce eklemiştik)
-		adminGroup.GET("/admin/promotions", admin.GetPromotions)          // <--- YENİ
-		adminGroup.DELETE("/admin/promotions/:id", admin.DeletePromotion) // <--- YENİ
+		adminGroup.POST("/admin/promotions", admin.CreatePromotion)
+		adminGroup.GET("/admin/promotions", admin.GetPromotions)
+		adminGroup.DELETE("/admin/promotions/:id", admin.DeletePromotion)
 	}
 
-	r.Run(":8080")
+	r.Run("0.0.0.0:8080")
 
 }

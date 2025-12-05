@@ -1,115 +1,57 @@
+// POST /admin/promotions
 package admin
 
 import (
-	"errors"
 	"net/http"
 	"portProject_development/db"
-	"portProject_development/enums"
 	"portProject_development/models"
-	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
-func Promotion(c *gin.Context) {
-	productId := c.Param("id")
-	productIdInt, err := strconv.Atoi(productId)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Geçersiz ID"})
-		return
-	}
-
-	var input struct {
-		PromotionType  string  `json:"promotion_type" binding:"required"`
-		DiscountRate   float64 `json:"discount_rate"`
-		ShipPriceLimit float64 `json:"ship_price_limit"`
-	}
+func CreatePromotion(c *gin.Context) {
+	var input models.Promotion
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// Ürün kontrolü
-	var product models.Product
-	if err := db.DB.First(&product, productId).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Ürün bulunamadı"})
+	// Varsayılan bitiş tarihi yoksa 1 yıl sonrasını ver
+	if input.ExpiresAt.IsZero() {
+		input.ExpiresAt = time.Now().AddDate(1, 0, 0)
+	}
+
+	if err := db.DB.Create(&input).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Promosyon oluşturulamadı"})
 		return
 	}
 
-	targetType := enums.PromotionType(input.PromotionType)
-	var promotion models.Promotion
-
-	// Bu ürün için ve bu tipte (Örn: Discount) zaten açık bir kampanya başlığı var mı?
-	errProm := db.DB.Where("product_id = ? AND promotion_type = ?", product.ID, targetType).First(&promotion).Error
-
-	if errProm == nil {
-
-	} else if errors.Is(errProm, gorm.ErrRecordNotFound) {
-		//  eğer kayıt yoksa yenisini oluştur
-		promotion = models.Promotion{
-			ProductID:     product.ID,
-			PromotionType: targetType,
-		}
-		if err := db.DB.Create(&promotion).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Promosyon başlığı oluşturulamadı"})
-			return
-		}
-	} else {
-		// Veritabanı hatası
-		c.JSON(http.StatusInternalServerError, gin.H{"error": errProm.Error()})
-		return
-	}
-
-	if targetType == enums.PromotionTypeDiscount {
-		DiscountPromotion(c, input.DiscountRate, productIdInt, promotion.ID)
-		return
-	}
-
+	c.JSON(http.StatusCreated, gin.H{"data": input})
 }
 
-func DiscountPromotion(c *gin.Context, discountRate float64, productId int, promotionId uint) {
+// PROMOSYONLARI GETİR
+func GetPromotions(c *gin.Context) {
+	var promotions []models.Promotion
 
-	//promosyon yüzdesi ver
-
-	if discountRate <= 0 || discountRate > 100 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Lütfen indirim değerlerini kontrol ediniz..."})
+	// En yeniden en eskiye doğru sırala
+	if err := db.DB.Order("created_at desc").Find(&promotions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Promosyonlar getirilemedi"})
 		return
 	}
 
-	var product models.Product
-	//ürünü getir
-	if err := db.DB.First(&product, productId).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	}
-
-	var discountPromos []models.Discount
-
-	if err := db.DB.
-		Joins("JOIN promotions ON promotions.id = discounts.promotion_id").
-		Where("discounts.product_id = ? AND promotions.promotion_type = ?", productId, enums.PromotionTypeDiscount).
-		Find(&discountPromos).Error; err == nil {
-		if len(discountPromos) > 0 {
-			db.DB.Where("product_id = ?", productId).Delete(&models.Discount{})
-
-		}
-	}
-	//promosyonlu fiyatı hesapla
-	var discountPrice = product.Price - (((discountRate) / 100) * product.Price)
-
-	discount := models.Discount{
-		ProductID:     product.ID, // ⚠ FK hatasını engellemek için zorunlu
-		PromotionID:   promotionId,
-		DiscountRate:  discountRate,
-		DiscountPrice: discountPrice,
-	}
-
-	if err := db.DB.Create(&discount).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	c.JSON(http.StatusOK, gin.H{"data": promotions})
 }
 
-func ShipPromotion(c *gin.Context, shipPriceLimit float64, productId int, promotionId uint) {
+// PROMOSYON SİL (DELETE /admin/promotions/:id)
+func DeletePromotion(c *gin.Context) {
+	id := c.Param("id")
 
+	// Veritabanından sil (Hard delete yapar, istersen Soft Delete için gorm.DeletedAt kullanmış olman gerekirdi)
+	if err := db.DB.Delete(&models.Promotion{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Promosyon silinemedi"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Promosyon başarıyla silindi"})
 }

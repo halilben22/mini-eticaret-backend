@@ -31,7 +31,7 @@ func CalculateOrderTotal(cartItems []models.CartItem, promoCode string, db *gorm
 
 	// Promosyon Kontrolü
 	if promoCode != "" {
-		var promo models.ShipPromotion
+		var promo models.Promotion
 		// Kodu bul, aktif mi ve süresi dolmamış mı bak
 		if err := db.Where("code = ? AND is_active = ? AND expires_at > ?", promoCode, true, time.Now()).First(&promo).Error; err == nil {
 
