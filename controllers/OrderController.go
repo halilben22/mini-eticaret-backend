@@ -3,10 +3,13 @@ package controllers
 import (
 	"net/http"
 	"portProject_development/db"
+	"portProject_development/enums"
 	"portProject_development/models" // Kendi modül adın
 
 	"github.com/gin-gonic/gin"
 )
+
+const pendingStatus = string(enums.OrderStatusPending)
 
 type OrderInput struct {
 	ShippingAddress string `json:"shipping_address" binding:"required"`
@@ -29,7 +32,7 @@ func CreateOrder(c *gin.Context) {
 	order := models.Order{
 		UserID:          user.ID,
 		ShippingAddress: input.ShippingAddress,
-		Status:          "pending",
+		Status:          pendingStatus,
 		TotalAmount:     0,
 	}
 

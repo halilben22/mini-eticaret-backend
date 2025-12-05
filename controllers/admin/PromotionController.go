@@ -30,7 +30,7 @@ func CreatePromotion(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"data": input})
 }
 
-// PROMOSYONLARI GETİR
+// GET PROMOTIONS
 func GetPromotions(c *gin.Context) {
 	var promotions []models.Promotion
 
@@ -43,11 +43,11 @@ func GetPromotions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": promotions})
 }
 
-// PROMOSYON SİL (DELETE /admin/promotions/:id)
+// DELETE PROMOTION(DELETE /admin/promotions/:id)
 func DeletePromotion(c *gin.Context) {
 	id := c.Param("id")
 
-	// Veritabanından sil (Hard delete yapar, istersen Soft Delete için gorm.DeletedAt kullanmış olman gerekirdi)
+	// DELETE BY "HARD DELETE" (DELETING PERMANANTLY)
 	if err := db.DB.Delete(&models.Promotion{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Promosyon silinemedi"})
 		return

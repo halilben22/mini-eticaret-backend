@@ -2,13 +2,20 @@ package controllers
 
 import (
 	"net/http"
-	"portProject_development/db" // DB değişkeni nerede tanımlıysa orayı import et (models veya db paketi)
+	"portProject_development/db"
+	"portProject_development/enums"
 	"portProject_development/helper"
 	"portProject_development/models"
 
 	"github.com/gin-gonic/gin"
 )
 
+// STATUS ENUMS
+const orderStatusPaid = string(enums.OrderStatusPaid)
+const orderStatusShipped = string(enums.OrderStatusShipped)
+const orderStatusWaitingPayment = string(enums.OrderStatusWaitingPayment)
+
+// ADDING PRODUCTS INTO CART
 func AddToCart(c *gin.Context) {
 	userCtx, _ := c.Get("user")
 	userID := userCtx.(models.User).ID
@@ -29,22 +36,22 @@ func AddToCart(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
+
+	//STOCK AND INPUT COMPARING BECAUSE STOCK CAN'T BE LOWER THAN INPUT QUANTITY
 	if product.StockQuantity < input.Quantity {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Stock Quantity must be greater than or equal to Quantity"})
 		return
 
 	}
 
-	//Sepeti var mı yok mu onu kontrol et
-
+	//CHECKING IF CART ALREADY EXIST OR NOT IF NOT,CREATE AN EMPTY ONE(PERMANENTLY)
 	var cart models.Cart
 	if err := database.Where("user_id = ?", userID).FirstOrCreate(&cart, models.Cart{UserID: userID}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Sepet hatası"})
 		return
 	}
 
-	//Sepette zaten varsa  ürünün sayısını artır...
-
+	//IF THAT ITEM WHICH WANTED TO BE ADDED BY USER IS ALREADY EXITS,SIMPLY INCREASE...
 	var cartItem models.CartItem
 	err := database.Where("cart_id=? AND product_id=?", cart.ID, input.ProductID).First(&cartItem).Error
 	if err == nil { //Yani aynı ürün zaten sepette. bu yüzden adedi artır
@@ -63,6 +70,7 @@ func AddToCart(c *gin.Context) {
 
 }
 
+// GET ALL CART DATA
 func GetCart(c *gin.Context) {
 
 	userCtx, _ := c.Get("user")
@@ -79,7 +87,7 @@ func GetCart(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": cart})
 }
 
-// SİPARİŞ OLUŞTURMA
+// CREATING ORDER
 func CreateOrderBeforePayment(c *gin.Context) {
 	userCtx, _ := c.Get("user")
 	userID := userCtx.(models.User).ID
@@ -94,7 +102,7 @@ func CreateOrderBeforePayment(c *gin.Context) {
 		return
 	}
 
-	// Sepeti Getir
+	// GET CART
 	var cart models.Cart
 	if err := database.Preload("Items.Product").Where("user_id = ?", userID).First(&cart).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Sepet boş"})
@@ -105,40 +113,42 @@ func CreateOrderBeforePayment(c *gin.Context) {
 		return
 	}
 
+	//CALCULATION HELPER FUNC FOR CALCULATING TOTAL PAYMENT
 	calc := helper.CalculateOrderTotal(cart.Items, input.PromoCode, db.DB)
-
+	//TRANSACTION BEGIN HERE
 	tx := database.Begin()
 
-	//eski siparişi silme kısmı
+	//DELETING OLD ORDER
+	//WHY WE SHOULD DO THIS? IF USER DOESN'T WANT TO PAY IN PAYMENT SCREEN AND BACK TO CART AGAIN AND IF CHANGE SOME
+	//ITEMS ON THERE,WE MUST DELETE THE OLD ORDER SO WE CAN ADD NEW ONE IN DB
 	var existingOrder models.Order
-	// Kullanıcının "waiting_payment" durumundaki siparişini bul
-	if err := tx.Preload("OrderItems").Where("user_id = ? AND status = ?", userID, "waiting_payment").First(&existingOrder).Error; err == nil {
-		// Eğer böyle bir sipariş VARSA (Hata yoksa):
+	// FIND USER'S ORDER ON THE "WAITING_PAYMENT" STATUS
+	if err := tx.Preload("OrderItems").Where("user_id = ? AND status = ?", userID, orderStatusWaitingPayment).First(&existingOrder).Error; err == nil {
+		// IF THAT ORDER EXISTS AND NO ERROR
 
-		// siparişi silmeden stokları geri yükle
+		// FIRST,GET THE ITEMS ON THE ORDER
 		for _, oldItem := range existingOrder.OrderItems {
 			var product models.Product
 			if err := tx.First(&product, oldItem.ProductID).Error; err == nil {
+				//RESTORE THE STOCK OF OLD ITEMS
 				product.StockQuantity += oldItem.Quantity
 				tx.Save(&product)
 			}
 		}
 
-		// eski siparişin detaylarını sil
+		// DELETE
 		tx.Where("order_id = ?", existingOrder.ID).Delete(&models.OrderItem{})
 
-		// 3. Eski Siparişin Kendisini Sil
+		// DELETE OLD ORDER'S DETAILS
 		tx.Delete(&existingOrder)
 
 	}
 
-	//Yeni Sipariş'in dbye kaydı
+	//SAVING OF NEW ORDER'S RECORDS
 	order := models.Order{
-		UserID:          userID,
-		ShippingAddress: input.ShippingAddress,
-		Status:          "waiting_payment",
-
-		// YENİ ALANLAR
+		UserID:           userID,
+		ShippingAddress:  input.ShippingAddress,
+		Status:           orderStatusWaitingPayment,
 		SubTotal:         calc.SubTotal,
 		ShippingFee:      calc.ShippingFee,
 		DiscountAmount:   calc.DiscountAmount,
@@ -151,17 +161,15 @@ func CreateOrderBeforePayment(c *gin.Context) {
 		return
 	}
 
-	//var totalAmount float64 = 0
-
 	for _, cartItem := range cart.Items {
-		// ... Stok Kontrolü ...
+		// WE SHOULD CHECK THE STOCK AGAIN BECAUSE SOMEONE MIGHT ALREADY BUY THAT SPECIFIC ITEM
 		if cartItem.Product.StockQuantity < cartItem.Quantity {
 			tx.Rollback()
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Stok yetersiz: " + cartItem.Product.Name})
 			return
 		}
 
-		// ... OrderItem Oluşturma ...
+		// CREATING ORDER ITEM DETAILS
 		orderItem := models.OrderItem{
 			OrderID:   order.ID,
 			ProductID: cartItem.ProductID,
@@ -173,14 +181,13 @@ func CreateOrderBeforePayment(c *gin.Context) {
 			return
 		}
 
-		// ... Stoktan Düşme ...
+		// DECREASING STOCK
 		newStock := cartItem.Product.StockQuantity - cartItem.Quantity
 		tx.Model(&cartItem.Product).Update("stock_quantity", newStock)
 
-		//totalAmount += cartItem.Product.Price * float64(cartItem.Quantity)
 	}
 
-	// ... Toplam Güncelleme ve Commit ...
+	// TOTAL AMOUNT UPDATING AND COMMITING TRANSACTION
 	if err := tx.Model(&order).Update("total_amount", calc.TotalAmount).Error; err != nil {
 		tx.Rollback()
 		return
@@ -192,11 +199,11 @@ func CreateOrderBeforePayment(c *gin.Context) {
 		"message":  "Sipariş oluşturuldu",
 		"order_id": order.ID,
 		"total":    order.TotalAmount,
-		"shipping": order.ShippingFee, // Frontend'e kargo ücretini de dönelim
+		"shipping": order.ShippingFee,
 	})
 }
 
-// Ödeme onayı
+// CONFIRM PAYMENT
 func ConfirmPayment(c *gin.Context) {
 	userCtx, _ := c.Get("user")
 	userID := userCtx.(models.User).ID
@@ -214,7 +221,7 @@ func ConfirmPayment(c *gin.Context) {
 
 	tx := database.Begin()
 
-	// A. Siparişi Bul
+	// FIND THE ORDER
 	var order models.Order
 	if err := tx.Where("id = ? AND user_id = ?", input.OrderID, userID).First(&order).Error; err != nil {
 		tx.Rollback()
@@ -222,15 +229,15 @@ func ConfirmPayment(c *gin.Context) {
 		return
 	}
 
-	// B. Zaten ödenmiş mi?
-	if order.Status == "paid" || order.Status == "shipped" {
+	// CHECKING IF ALREADY PAID OR NOT
+	if order.Status == orderStatusPaid || order.Status == orderStatusShipped {
 		tx.Rollback()
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Bu sipariş zaten ödenmiş"})
 		return
 	}
 
-	// C. Durumu Güncelle
-	order.Status = "paid" // Veya "preparing"
+	// UPDATE THE STATUS
+	order.Status = orderStatusPaid // OR "PREPARING"
 	if err := tx.Save(&order).Where("order_id", order.ID).Error; err != nil {
 		tx.Rollback()
 		return
@@ -246,7 +253,7 @@ func ConfirmPayment(c *gin.Context) {
 
 }
 
-// SEPET ÜRÜNÜNÜ GÜNCELLE (PUT /cart)
+// UPDATE CART PRODUCT
 func UpdateCartItem(c *gin.Context) {
 	userCtx, _ := c.Get("user")
 	userID := userCtx.(models.User).ID
@@ -261,21 +268,21 @@ func UpdateCartItem(c *gin.Context) {
 		return
 	}
 
-	// Sepeti Bul
+	// FIND THE CART
 	var cart models.Cart
 	if err := database.Where("user_id = ?", userID).First(&cart).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Sepet bulunamadı"})
 		return
 	}
 
-	// Ürünü Bul
+	// FIND THE PRODUCT IN THE CART
 	var cartItem models.CartItem
 	if err := database.Where("cart_id = ? AND product_id = ?", cart.ID, input.ProductID).First(&cartItem).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Ürün sepette yok"})
 		return
 	}
 
-	// Stok Kontrolü (Yeni girilen miktar stoktan fazla mı?)
+	// STOCK CHECK
 	var product models.Product
 	database.First(&product, input.ProductID)
 	if product.StockQuantity < input.Quantity {
@@ -283,30 +290,30 @@ func UpdateCartItem(c *gin.Context) {
 		return
 	}
 
-	// --- GÜNCELLEME İŞLEMİ (=) ---
+	// UPDATING PART
 	cartItem.Quantity = input.Quantity
 	database.Save(&cartItem)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Sepet güncellendi", "item": cartItem})
 }
 
-// SEPETTEN ÜRÜN SİL
+// DELETE PRODUCT FROM THE CART
 func RemoveFromCart(c *gin.Context) {
 	userCtx, _ := c.Get("user")
 	userID := userCtx.(models.User).ID
 	database := db.DB
 
-	// id alalım
+	// GET ID FROM CONTEXT
 	productID := c.Param("id")
 
-	// sepeti getir
+	// GET CART
 	var cart models.Cart
 	if err := database.Where("user_id = ?", userID).First(&cart).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Sepet bulunamadı"})
 		return
 	}
 
-	//silme kısmı
+	//DELETING PART
 	result := database.Where("cart_id = ? AND product_id = ?", cart.ID, productID).Delete(&models.CartItem{})
 
 	if result.Error != nil {

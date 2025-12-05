@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
-	"portProject_development/db" // Kendi modül ismin
+	"portProject_development/db"
 	"portProject_development/models"
 	"strconv"
 	"time"
@@ -80,7 +80,7 @@ func CreateProduct(c *gin.Context) {
 	stock, _ := strconv.Atoi(stockStr)
 	categoryID, _ := strconv.Atoi(categoryIDStr)
 
-	//Dosya yükle
+	//Dosya yükleme
 	file, err := c.FormFile("image")
 	var imagePath string
 
@@ -95,8 +95,8 @@ func CreateProduct(c *gin.Context) {
 			return
 		}
 
-		// Veritabanına kaydedilecek yol (URL)
-		// Gerçek hayatta buraya tam domain de eklenebilir (http://localhost:8080/...)
+		// Veritabanına kaydedilecek yol
+		// Yayına aldığımda domain eklerim
 		imagePath = "/uploads/" + filename
 
 	} else {
@@ -126,7 +126,7 @@ func CreateProduct(c *gin.Context) {
 
 }
 
-// ÜRÜN GÜNCELLE (PUT /products/:id)
+// PRODUCT UPDATE FUNC
 func UpdateProduct(c *gin.Context) {
 	id := c.Param("id")
 
@@ -137,14 +137,14 @@ func UpdateProduct(c *gin.Context) {
 		return
 	}
 
-	// Form verilerini al
+	// GET FORM DATA
 	name := c.PostForm("name")
 	description := c.PostForm("description")
 	priceStr := c.PostForm("price")
 	stockStr := c.PostForm("stock_quantity")
 	categoryIDStr := c.PostForm("category_id")
 
-	// Eğer boş değilse güncelle
+	// IF NOT EMPTY,THEN UPDATE
 	if name != "" {
 		product.Name = name
 	}
@@ -168,7 +168,7 @@ func UpdateProduct(c *gin.Context) {
 		}
 	}
 
-	// Resim Güncelleme
+	// IMAGE FILE UPDATE
 	file, err := c.FormFile("image")
 	if err == nil {
 		// Yeni resim geldiyse eskisini silmek (os.Remove) iyi olur ama şimdilik üzerine yazalım
@@ -180,7 +180,7 @@ func UpdateProduct(c *gin.Context) {
 		}
 	}
 
-	// Kaydet
+	// Save
 	if err := db.DB.Save(&product).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Güncelleme başarısız"})
 		return
@@ -189,11 +189,11 @@ func UpdateProduct(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Ürün güncellendi", "data": product})
 }
 
-// SOFT DELETE İLE ÜRÜNÜ SİLME
+// DELETING PRODUCT BY "SOFT DELETE"(NOT EXACTLY DELETING ON DB BUT SWITCHING IS_ACTIVE CASE)
 func DeleteProduct(c *gin.Context) {
 	id := c.Param("id")
 
-	//SİLİNMİŞ GİBİ GÖRÜNECEK VE GEÇMİŞTE BU ÜRÜNÜ ALANLARIN KAYITLARINI TUTABİLECEĞİZ...
+	//IT'LL LOOKS LIKE DELETED ON FRONT-END BUT WE CAN KEEP RECORDS OF ORDER'S PAST DATA
 	if err := db.DB.Model(&models.Product{}).Where("id = ?", id).Update("is_active", false).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ürün arşivlenemedi"})
 		return

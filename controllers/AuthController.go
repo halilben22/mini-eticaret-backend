@@ -7,12 +7,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
-
 	"net/http"
 	"portProject_development/db"
+	"portProject_development/enums"
 	"portProject_development/models"
 	"strings"
 )
+
+const adminRole = string(enums.AdminRole)
+const customerRole = string(enums.CustomerRole)
 
 func Register(c *gin.Context) {
 
@@ -30,7 +33,7 @@ func Register(c *gin.Context) {
 		Email:        input.Email,
 		PasswordHash: input.Password,
 		FullName:     input.FullName,
-		Role:         "customer",
+		Role:         customerRole,
 	}
 
 	if err := db.DB.Create(&user).Error; err != nil {
@@ -59,15 +62,14 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	//Hashlenmis şifre kontrolü
+	//HASHED PSWD CHECK
 	err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password))
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Email veya şifre hatalı"})
 		return
 	}
 
-	//Token üretme
-
+	//CREATE TOKEN
 	claims := jwt.MapClaims{
 		"sub":  user.ID,
 		"role": user.Role,
@@ -87,6 +89,7 @@ func Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": tokenString})
 }
 
+// LOG-OUT FUNC
 func Logout(c *gin.Context) {
 	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
@@ -94,12 +97,11 @@ func Logout(c *gin.Context) {
 		return
 	}
 
-	//Bearer ön ekini temizleme
+	//CLEARING BEARER PREFIX
 	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
-	// 3. Kara Listeye Ekle
-	// Gerçek hayatta token'ın 'exp' (son kullanma) tarihini alıp buraya kaydetmek iyidir.
-	// Şimdilik basitçe token'ı kaydediyoruz.
+	//--BLACK-LIST METHOD---
+	//SIMPLY,ADDING TOKEN INTO BLACK LIST WHEN USER LOGOUT DUE TO SECURITY
 	blacklistedToken := models.TokenBlackList{
 		Token:     tokenString,
 		ExpiresAt: time.Now().Add(24 * time.Hour), // Örnek olarak 24 saat sonra silinebilir
