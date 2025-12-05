@@ -58,9 +58,9 @@ func main() {
 		customerGroup.POST("/orders", controllers.CreateOrder)
 		customerGroup.GET("/orders", controllers.GetMyOrders)
 
-		customerGroup.POST("/cart", controllers.AddToCart) // Sepete Ekle
-		customerGroup.GET("/cart", controllers.GetCart)
-		customerGroup.PUT("/cart", controllers.UpdateCartItem)
+		customerGroup.POST("/cart", controllers.AddToCart)     // Sepete Ekle
+		customerGroup.GET("/cart", controllers.GetCart)        //sepeti getir
+		customerGroup.PUT("/cart", controllers.UpdateCartItem) //sepeti güncelle
 
 		// SİPARİŞ OLUŞTUR (Sepet kalır)
 		customerGroup.POST("/create-order", controllers.CreateOrderBeforePayment)
@@ -70,6 +70,9 @@ func main() {
 
 		//Yorum yazma
 		customerGroup.POST("/products/:id/reviews", controllers.AddReview)
+
+		//sepet silme fonksiyonu
+		customerGroup.DELETE("/cart/:id", controllers.RemoveFromCart)
 
 	}
 
@@ -83,8 +86,6 @@ func main() {
 		adminGroup.GET("/admin/stats", admin.GetDashboardStats)      // İstatistik
 		adminGroup.GET("/admin/orders", admin.GetAllOrders)          // Tüm siparişler
 		adminGroup.PUT("/admin/orders/:id", admin.UpdateOrderStatus) // Durum güncelleme
-
-		// ... adminGroup içinde ...
 
 		// Promosyon Yönetimi
 		adminGroup.POST("/admin/promotions", admin.CreatePromotion)       // (Bunu daha önce eklemiştik)

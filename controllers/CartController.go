@@ -79,110 +79,7 @@ func GetCart(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": cart})
 }
 
-/*
-func Checkout(c *gin.Context) {
-
-	userCtx, _ := c.Get("user")
-	userID := userCtx.(models.User).ID
-	database := db.DB
-
-	var input struct {
-		ShippingAdress string `json:"shipping_address" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"Teslimat adresi gereklidir!": err.Error()})
-		return
-	}
-
-	//Sepet içindeki ürünleri getir
-	var cart models.Cart
-	if err := database.Preload("Items.Product").Where("user_id= ?", userID).First(&cart).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Sepetiniz boş!"})
-		return
-	}
-
-	if len(cart.Items) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Sepetiniz boş, sipariş oluşturulamaz. Lütfen ürün seçin."})
-		return
-	}
-
-	// 3. TRANSACTION BAŞLAT (Hata olursa her şeyi geri almak için)
-	tx := database.Begin()
-
-	order := models.Order{
-		UserID:          userID,
-		ShippingAddress: input.ShippingAdress,
-		Status:          "pending",
-		TotalAmount:     0,
-	}
-	if err := tx.Create(&order).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-
-	}
-
-	var totalAmount float64 = 0
-
-	//Sepetteki ürünleri order'a taşı
-
-	for _, cartItem := range cart.Items {
-		if cartItem.Product.StockQuantity < cartItem.Quantity {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Stok tükenmiş. " + cartItem.Product.Name})
-			return
-		}
-
-		//Sipariş detayı oluşturma kısmı
-		orderItem := models.OrderItem{
-			OrderID:   order.ID,
-			ProductID: cartItem.Product.ID,
-			Quantity:  cartItem.Quantity,
-			UnitPrice: cartItem.Product.Price,
-		}
-		if err := tx.Create(&orderItem).Error; err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Sipariş detayı oluşturulamadı"})
-			return
-		}
-
-		//Stoktan düşme
-		//Modeldeki stoğu güncelle
-
-		newStock := cartItem.Product.StockQuantity - cartItem.Quantity
-		if err := tx.Model(&cartItem.Product).Update("stock_quantity", newStock).Error; err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		//Toplam parayı hesaplama kısmı
-		totalAmount += cartItem.Product.Price * float64(cartItem.Quantity)
-	}
-
-	//Sipariş'in toplam ederini güncelle
-
-	if err := tx.Model(&order).Update("total_amount", totalAmount).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	//Siparişi oluştur ve sepeti boşalt,sepet kalabilir.
-	if err := tx.Where("cart_id=?", cart.ID).Delete(&models.CartItem{}).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	tx.Commit()
-
-	c.JSON(http.StatusOK, gin.H{"message": "Sipariş oluşturuldu", "order_id": order.ID, "total": totalAmount})
-
-}
-*/
-
-// 1. SİPARİŞ OLUŞTURMA
+// SİPARİŞ OLUŞTURMA
 func CreateOrderBeforePayment(c *gin.Context) {
 	userCtx, _ := c.Get("user")
 	userID := userCtx.(models.User).ID
@@ -349,7 +246,7 @@ func ConfirmPayment(c *gin.Context) {
 
 }
 
-// 4. SEPET ÜRÜNÜNÜ GÜNCELLE (PUT /cart)
+// SEPET ÜRÜNÜNÜ GÜNCELLE (PUT /cart)
 func UpdateCartItem(c *gin.Context) {
 	userCtx, _ := c.Get("user")
 	userID := userCtx.(models.User).ID
@@ -391,4 +288,31 @@ func UpdateCartItem(c *gin.Context) {
 	database.Save(&cartItem)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Sepet güncellendi", "item": cartItem})
+}
+
+// SEPETTEN ÜRÜN SİL
+func RemoveFromCart(c *gin.Context) {
+	userCtx, _ := c.Get("user")
+	userID := userCtx.(models.User).ID
+	database := db.DB
+
+	// id alalım
+	productID := c.Param("id")
+
+	// sepeti getir
+	var cart models.Cart
+	if err := database.Where("user_id = ?", userID).First(&cart).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Sepet bulunamadı"})
+		return
+	}
+
+	//silme kısmı
+	result := database.Where("cart_id = ? AND product_id = ?", cart.ID, productID).Delete(&models.CartItem{})
+
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Silme işlemi başarısız"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Ürün sepetten silindi"})
 }
