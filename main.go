@@ -39,7 +39,7 @@ func main() {
 	r.POST("/login", controllers.Login)
 
 	r.GET("/products/:id/reviews", controllers.GetProductReview)
-
+	r.GET("/categories", controllers.GetCategories)
 	// YENİ: En Çok Puan Alanlar
 	r.GET("/products/top-rated", controllers.GetTopRatedProducts)
 

@@ -18,16 +18,21 @@ type User struct {
 }
 
 type Product struct {
-	ID          uint    `gorm:"primaryKey" json:"id"`
-	CategoryID  uint    `json:"category_id"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	Price       float64 `json:"price"`
-
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	CategoryID    uint      `json:"category_id"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	Price         float64   `json:"price"`
+	Category      Category  `gorm:"foreignKey:CategoryID" json:"category"`
 	StockQuantity int       `json:"stock_quantity"`
 	ImageURL      string    `json:"image_url" `
 	IsActive      bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt     time.Time `json:"created_at"`
+}
+
+type Category struct {
+	ID   uint   `gorm:"primaryKey" json:"id"`
+	Name string `json:"name"`
 }
 
 type Order struct {

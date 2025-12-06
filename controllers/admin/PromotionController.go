@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// CREATE PROMOTION
 func CreatePromotion(c *gin.Context) {
 	var input models.Promotion
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -17,7 +18,7 @@ func CreatePromotion(c *gin.Context) {
 		return
 	}
 
-	// Varsayılan bitiş tarihi yoksa 1 yıl sonrasını ver
+	// EXPIRE DATE 1 YEAR AFTER
 	if input.ExpiresAt.IsZero() {
 		input.ExpiresAt = time.Now().AddDate(1, 0, 0)
 	}
@@ -34,7 +35,7 @@ func CreatePromotion(c *gin.Context) {
 func GetPromotions(c *gin.Context) {
 	var promotions []models.Promotion
 
-	// En yeniden en eskiye doğru sırala
+	// SORT BY NEWEST TO OLDEST
 	if err := db.DB.Order("created_at desc").Find(&promotions).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Promosyonlar getirilemedi"})
 		return
@@ -47,7 +48,7 @@ func GetPromotions(c *gin.Context) {
 func DeletePromotion(c *gin.Context) {
 	id := c.Param("id")
 
-	// DELETE BY "HARD DELETE" (DELETING PERMANANTLY)
+	// DELETE BY "HARD DELETE" (DELETING PERMANENTLY)
 	if err := db.DB.Delete(&models.Promotion{}, id).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Promosyon silinemedi"})
 		return

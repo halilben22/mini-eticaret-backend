@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ORDER STATUS ENUM
 const pendingStatus = string(enums.OrderStatusPending)
 
 type OrderInput struct {
@@ -36,11 +37,11 @@ func CreateOrder(c *gin.Context) {
 		TotalAmount:     0,
 	}
 
-	//Eğer işler yolunda gitmezse bu başlatılan transaction kendini geri alır
+	//TRANSACTION BEGINS
 	tx := db.DB.Begin()
 
 	if err := tx.Create(&order).Error; err != nil {
-		tx.Rollback() //Burda her şeyi geri alır
+		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Sipariş oluşturulamadı"})
 		return
 	}
@@ -48,12 +49,13 @@ func CreateOrder(c *gin.Context) {
 	for _, itemInput := range input.Items {
 		var product models.Product
 
+		//FIND ITEM
 		if err := tx.First(&product, itemInput.ProductID).Error; err != nil {
 			tx.Rollback()
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Ürün bulunamadı ID: " + string(rune(itemInput.ProductID))})
 			return
 		}
-
+		//STOCK AND ITEM INPUT QUANTITY COMPARE
 		if product.StockQuantity < itemInput.Quantity {
 			tx.Rollback()
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Stok yetersiz: " + product.Name})
@@ -64,7 +66,7 @@ func CreateOrder(c *gin.Context) {
 			OrderID:   order.ID,
 			ProductID: product.ID,
 			Quantity:  itemInput.Quantity,
-			UnitPrice: product.Price, // O anki fiyatı sabitliyoruz!
+			UnitPrice: product.Price,
 		}
 
 		if err := tx.Create(&orderItem).Error; err != nil {
@@ -72,7 +74,7 @@ func CreateOrder(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Sipariş detayı eklenemedi"})
 			return
 		}
-		product.StockQuantity -= itemInput.Quantity //Stoktan düş
+		product.StockQuantity -= itemInput.Quantity //DECREASE STOCK
 
 		if err := tx.Save(&product).Error; err != nil {
 			tx.Rollback()
@@ -84,18 +86,18 @@ func CreateOrder(c *gin.Context) {
 
 	order.TotalAmount = totalAmount
 	tx.Save(&order)
-	// İşlemi onayla (Commit)
 	tx.Commit()
 
 	c.JSON(http.StatusCreated, gin.H{"message": "Sipariş alındı!", "order_id": order.ID, "total": totalAmount})
 }
 
+// GET ALL ORDERS
 func GetMyOrders(c *gin.Context) {
 	userCtx, _ := c.Get("user")
 	user := userCtx.(models.User)
 
 	var orders []models.Order
-
+	//WE USED "PRELOAD" BECAUSE WE NEED PRODUCT DETAILS
 	db.DB.Preload("OrderItems.Product").Where("user_id = ?", user.ID).Find(&orders)
 	c.JSON(http.StatusOK, gin.H{"data": orders})
 }
